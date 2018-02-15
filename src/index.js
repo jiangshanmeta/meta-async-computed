@@ -54,6 +54,9 @@ function defineAsyncComputed(vm,key,userDef){
 
 export default {
     install(Vue){
+        // 合并策略设置，与computed一样 尽可能保留重复的后面的覆盖前面的
+        Vue.config.optionMergeStrategies.asyncComputed = Vue.config.optionMergeStrategies.computed;
+        
         Vue.mixin({
             created(){
                 const asyncComputed = this.$options.asyncComputed;
