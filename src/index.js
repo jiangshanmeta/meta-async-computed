@@ -1,74 +1,124 @@
-function _genDefault(defaultVal,vm){
-    return typeof defaultVal === 'function'?defaultVal.call(vm):defaultVal;
-}
+function noop(){}
 
-function defineAsyncComputed(vm,key,userDef){
-    let getter;
-    let defaultVal = null;
-    let lazy = false;
-    let watch;
-    
-    if(typeof userDef === 'function'){
-        getter = userDef;
-    }else{
-        getter = userDef.get;
-        if(userDef.hasOwnProperty('default')){
-            defaultVal = userDef.default;
-        }
-        if(typeof userDef.watch === 'function'){
-            watch = userDef.watch;
+function generateGetter(key,fn){
+    if(typeof fn === 'function'){
+        return fn;
+    }
+    let getter = fn.get;
+    if(fn.hasOwnProperty('watch')){
+        getter = function(){
+            fn.watch.call(this);
+            return fn.get.call(this);
         }
     }
 
-    let val = _genDefault(defaultVal,vm);
+    if(fn.lazy){
+        let nonLazy = getter;
+        getter = function(){
+            if(this[lazyActivePrefix + key]){
+                return nonLazy.call(this);
+            }else{
+                return this[lazyDataPrefix + key];
+            }
+        };
+    }
 
-    Object.defineProperty(vm,key,{
-        get(){
-            return val;
-        },
-    });
-
-    vm.$watch(function(){
-        watch && watch.call(this);
-        val = _genDefault(defaultVal,vm);
-        vm.$forceUpdate();
-        return getter.call(this);
-    },function(promise){
-
-        if(!(promise instanceof Promise)){
-            promise = Promise.resolve(promise);
-        }
-
-        promise.then((newVal)=>{
-            val = newVal;
-            vm.$forceUpdate();
-        });
-
-
-    },{
-        lazy
-    })
-
+    return getter;
 }
 
 
-export default {
-    install(Vue){
-        // 合并策略设置，与computed一样 尽可能保留重复的后面的覆盖前面的
+
+
+const lazyDataPrefix = 'async_computed$data$';
+const lazyActivePrefix = 'async_computed$active$';
+
+export default{
+    install(Vue,pluginOptions={}){
         Vue.config.optionMergeStrategies.asyncComputed = Vue.config.optionMergeStrategies.computed;
         
+        let pulginDefault = pluginOptions.hasOwnProperty('default')?pluginOptions.default:null;
+        
         Vue.mixin({
-            created(){
-                const asyncComputed = this.$options.asyncComputed;
-                if(!asyncComputed || typeof asyncComputed !== 'object'){
+            beforeCreate(){
+                if(!this.$options.asyncComputed){
                     return;
                 }
 
-                Object.keys(asyncComputed).forEach((key)=>{
-                    defineAsyncComputed(this,key,asyncComputed[key])
-                })
+                const optionData = this.$options.data || {};
 
-            }
+                this.$options.data = function(){
+                    let data = typeof optionData === 'function'?optionData.call(this):optionData;
+
+                    for(let key in this.$options.asyncComputed){
+
+                        if(!this.$options.asyncComputed[key].lazy){
+                            data[key] = null;
+                        }else{
+                            data[lazyDataPrefix + key] = null;
+                            data[lazyActivePrefix + key] = false;
+
+                            Object.defineProperty(this,key,{
+                                get(){
+                                    this[lazyActivePrefix + key] = true;
+                                    return this[lazyDataPrefix + key];
+                                },
+                                set(val){
+                                    this[lazyDataPrefix + key] = val; 
+                                }
+                            })
+
+                        }
+                    }
+
+                    return data;
+                }
+            },
+            created(){
+                if(!this.$options.asyncComputed){
+                    return;
+                }
+                
+                for(let key in this.$options.asyncComputed){
+                    let item = this.$options.asyncComputed[key];
+                    let itemDefault = item.hasOwnProperty('default')?item.default:pulginDefault;
+                    if(typeof itemDefault === 'function'){
+                        itemDefault = itemDefault.call(this);
+                    }
+
+                    this[key] = itemDefault;
+
+                    let promiseId = 0;
+
+                    this.$watch(generateGetter(key,item),function(newPromise){
+                        if(!(newPromise instanceof Promise)){
+                            newPromise = Promise.resolve(newPromise);
+                        }
+
+                        const thisPromiseId = ++promiseId;
+
+                        newPromise.then((value)=>{
+                            if(thisPromiseId !== promiseId){
+                                return;
+                            }
+                            this[key] = value;
+                        }).catch((e)=>{
+                            if(thisPromiseId !== promiseId){
+                                return;
+                            }
+
+                            pluginOptions.errorHandler && pluginOptions.errorHandler.call(this,e);
+                        })
+
+
+                    },{
+                        immediate:true,
+                    });
+
+
+                }
+            },
         })
-    }
+
+
+    },
 }

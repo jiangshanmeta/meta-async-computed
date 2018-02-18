@@ -21,9 +21,15 @@
                 <th>userInfo</th>
                 <td>{{userInfo}}</td>
             </tr>
+            <tr v-if="isShowLazy">
+                <th>lazy</th>
+                <td>{{lazy}}</td>
+            </tr>
         </table>
 
         <button @click="increaseId">increase id</button>
+
+        <button @click="showLazy">showLazy</button>
     </section>
 </template>
 
@@ -33,6 +39,7 @@ export default{
         return {
             id:null,
             counter:0,
+            isShowLazy:false,
         };
     },
     computed:{
@@ -40,15 +47,16 @@ export default{
             get(){
                 return `${this.userName} || ${this.userMail}`
             },
-            cache:false,
+            // cache:false,
         }
     },
     asyncComputed:{
         userName(){
             return new Promise((resolve)=>{
                 let id = this.id;
-
+                console.log("getter for userName");
                 setTimeout(()=>{
+                    // console.log("resolved")
                     resolve(`name for ${id}`);
                 },2000);
             });
@@ -57,7 +65,9 @@ export default{
             get(){
                 return new Promise((resolve)=>{
                     let id = this.id;
+                    console.log("getter for userPhone");
                     setTimeout(()=>{
+
                         resolve(`phone for ${id}`);
                     },2000)
                 })
@@ -68,7 +78,9 @@ export default{
             get(){
                 return new Promise((resolve)=>{
                     let id = this.id;
+                    console.log("getter for userMail")
                     setTimeout(()=>{
+                        
                         resolve(`mail for ${id} and counter is ${this.counter}`)
                     },2000);
                 })
@@ -79,6 +91,18 @@ export default{
             default(){
                 return `loading mail for ${this.id} with counter is ${this.counter}`
             },
+        },
+        lazy:{
+            lazy:true,
+            get(){
+                console.log("getter for lazy")
+                let rst = `info that fetch lazy ${this.counter}`
+                return rst;
+            },
+            watch(){
+                return this.counter;
+            },
+            default:"loading lazy",
         }
 
     },
@@ -86,6 +110,9 @@ export default{
         increaseId(){
             this.id++;
         },
+        showLazy(){
+            this.isShowLazy = true;
+        }
     },
     created(){
         this.id = 1;
